@@ -1,0 +1,5 @@
+pytorch-transformers==1.2.0
+pytorch==1.0.2
+pytorch-crf==0.7.2
+nltk==3.4.5
+spacy==2.2.3
