@@ -27,7 +27,8 @@ from transformers import AdamW, WarmupLinearSchedule
 from matplotlib import pyplot as plt 
 import datetime
 from param import PARAM
-from tokenizer import tokenize
+import spacy
+tokenizer = spacy.load("en_core_web_sm", disable=["tagger", "parser", "ner"])
 
 log_soft = F.log_softmax
 
@@ -415,22 +416,15 @@ def raw_processing(doc, bert_tokenizer, word_tokenizer):
             bert_tokens.append('[CLS]')
             begins = []
             ends = []
-            for word in sentence.text.strip().split():
-                tokens_ = list(tokenize(word))
-                tokens = []
-                for tok in tokens_:
-                    if tok.txt is not None:
-                        tokens.extend(tok.txt.split())
-                for token in tokens:
-                    if token == None:
-                        continue
-                    offset = doc.find(token, offset)
-                    current_begins.append(offset)
-                    ends.append(offset + len(token))
-                    offset += len(token)
-                    orig_to_tok_map.append(len(bert_tokens))
-                    new_token = bert_tokenizer.tokenize(token)
-                    bert_tokens.extend(new_token)
+            for tok in tokenzer(word):
+            	token = tok.text
+                offset = doc.find(token, offset)
+                current_begins.append(offset)
+                ends.append(offset + len(token))
+                offset += len(token)
+                orig_to_tok_map.append(len(bert_tokens))
+                new_token = bert_tokenizer.tokenize(token)
+                bert_tokens.extend(new_token)
             bert_tokens.append('[SEP]')
             token_id = bert_tokenizer.convert_tokens_to_ids(bert_tokens)
             if len(token_id) > 511:
