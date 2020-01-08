@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 # Param file
-/bert_crf/param.py
+bert-crf4NER/bert-crf4NER/param.py
