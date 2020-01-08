@@ -72,47 +72,49 @@ def corpus_reader(path, delim='\t', word_idx=0, beg_idx=1, end_idx=2, fname_idx=
   return tokens, begins, ends, file_names, labels, list(OrderedDict.fromkeys(label_set))
 
 class NER_Dataset(data.Dataset):
-    def __init__(self, sentences, begins, ends, fnames, labels, tokenizer_path = '', do_lower_case=True):
-       self.sentences = sentences
-       self.begins = begins
-       self.ends = ends
-       self.fnames = fnames
-       self.labels = labels
-       self.tokenizer = BertTokenizer.from_pretrained(tokenizer_path, do_lower_case=do_lower_case)
+    def __init__(self, tag2idx, sentences, begins, ends, fnames, labels, tokenizer_path = '', do_lower_case=True):
+		self.tag2idx = tag2idx
+		self.sentences = sentences
+		self.begins = begins
+		self.ends = ends
+		self.fnames = fnames
+		self.labels = labels
+		self.tokenizer = BertTokenizer.from_pretrained(tokenizer_path, do_lower_case=do_lower_case)
 
     def __len__(self):
-        return len(self.sentences)
+    	return len(self.sentences)
 
     def __getitem__(self, idx):
-        label = []
-        for x in self.labels[idx]:
-            if x in tag2idx.keys():
-                label.append(tag2idx[x])
-            else:
-                label.append(tag2idx['O'])
-        bert_tokens = []
-        orig_to_tok_map = []
-        bert_tokens.append('[CLS]')
-        #append dummy label 'X' for subtokens
-        modified_labels = [tag2idx['X']]
-        for i, token in enumerate(sentence):
-            if len(bert_tokens) >= 512:
-                break
-            orig_to_tok_map.append(len(bert_tokens))
-            modified_labels.append(label[i])
-            new_token = self.tokenizer.tokenize(token)
-            bert_tokens.extend(new_token)
-            modified_labels.extend([tag2idx['X']] * (len(new_token) -1))
+		sentence = self.sentences[idx]
+		label = []
+		for x in self.labels[idx]:
+		    if x in self.tag2idx.keys():
+		        label.append(self.tag2idx[x])
+		    else:
+		        label.append(self.tag2idx['O'])
+		bert_tokens = []
+		orig_to_tok_map = []
+		bert_tokens.append('[CLS]')
+		#append dummy label 'X' for subtokens
+		modified_labels = [self.tag2idx['X']]
+		for i, token in enumerate(sentence):
+		    if len(bert_tokens) >= 512:
+		        break
+		    orig_to_tok_map.append(len(bert_tokens))
+		    modified_labels.append(label[i])
+		    new_token = self.tokenizer.tokenize(token)
+		    bert_tokens.extend(new_token)
+		    modified_labels.extend([self.tag2idx['X']] * (len(new_token) -1))
 
-        bert_tokens.append('[SEP]')
-        modified_labels.append(tag2idx['X'])
-        token_ids = self.tokenizer.convert_tokens_to_ids(bert_tokens)
-        f_name = self.fnames[idx][0]
-        if len(token_ids) > 511:
-            token_ids = token_ids[:512]
-            modified_labels = modified_labels[:512]
+		bert_tokens.append('[SEP]')
+		modified_labels.append(self.tag2idx['X'])
+		token_ids = self.tokenizer.convert_tokens_to_ids(bert_tokens)
+		f_name = self.fnames[idx][0]
+		if len(token_ids) > 511:
+		    token_ids = token_ids[:512]
+		    modified_labels = modified_labels[:512]
 
-        return token_ids, len(token_ids), orig_to_tok_map, modified_labels, self.begins[idx], self.ends[idx],  self.sentences[idx], self.fnames[idx]
+		return token_ids, len(token_ids), orig_to_tok_map, modified_labels, self.begins[idx], self.ends[idx],  self.sentences[idx], self.fnames[idx]
  
 def pad(batch):
     '''Pads to the longest sample'''
@@ -168,12 +170,12 @@ class Bert_CRF(BertPreTrainedModel):
 def generate_training_data(param, bert_tokenizer="bert-base", do_lower_case=True):
     training_data, validation_data = param.apr_dir+param.training_data, param.apr_dir+param.val_data 
     train_sentences, begins, ends, file_names, train_labels, tag2idx = corpus_reader(training_data, delim='\t')
-    train_dataset = NER_Dataset(train_sentences, begins, ends, file_names, train_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
+    train_dataset = NER_Dataset(tag2idx, train_sentences, begins, ends, file_names, train_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
     # save the tag2indx dictionary. Will be used while prediction
     with open(APR_DIR + 'tag2idx.pkl', 'wb') as f:
         pickle.dump(tag2idx, f, pickle.HIGHEST_PROTOCOL)
     dev_sentences, dev_begins, dev_ends, dev_file_names, dev_labels, _ = corpus_reader(validation_data, delim='\t')
-    dev_dataset = NER_Dataset(dev_sentences, dev_begins, dev_ends, dev_file_names, dev_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
+    dev_dataset = NER_Dataset(tag2idx, dev_sentences, dev_begins, dev_ends, dev_file_names, dev_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
 
     train_iter = data.DataLoader(dataset=train_dataset,
                                 batch_size=16,
@@ -187,10 +189,10 @@ def generate_training_data(param, bert_tokenizer="bert-base", do_lower_case=True
                                 collate_fn=pad)
     return train_iter, eval_iter, tag2idx
 
-def generate_test_data(param, bert_tokenizer="bert-base", do_lower_case=True):
+def generate_test_data(param, tag2idx, bert_tokenizer="bert-base", do_lower_case=True):
     test_data = param.apr_dir+param.test_data
     test_sentences, test_begins, test_ends, test_file_names, test_labels, _ = corpus_reader(test_data, delim='\t')
-    test_dataset = NER_Dataset(test_sentences, test_begins, test_ends, test_file_names, test_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
+    test_dataset = NER_Dataset(tag2idx, test_sentences, test_begins, test_ends, test_file_names, test_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
     test_iter = data.DataLoader(dataset=test_dataset,
                                 batch_size=16,
                                 shuffle=False,
@@ -328,7 +330,7 @@ def test(test_iter, model, unique_labels, test_output):
         with torch.torch.no_grad():
             tag_seqs = model(**inputs)
         y_true = list(labels.cpu().numpy())
-        for i in range(sorted_idx):
+        for i in range(len(sorted_idx)):
             o2m = org_tok_map[i]
             pos = sorted_idx.index(i)
             for j, orig_tok_idx in enumerate(o2m):
@@ -360,7 +362,7 @@ def parse_raw_data(padded_raw_data, model, unique_labels, out_file_name='raw_pre
     with torch.torch.no_grad():
         tag_seqs = model(**inputs)
     y_true = list(labels.cpu().numpy())
-    for i in range(sorted_idx):
+    for i in range(len(sorted_idx)):
         o2m = org_tok_map[i]
         pos = sorted_idx.index(i)
         for j, orig_tok_idx in enumerate(o2m):
@@ -401,7 +403,7 @@ def load_model(param, do_lower_case=True):
     logger.debug('return from model function')
     toc = time.time()
     model.eval()
-    return model, bert_tokenizer, unique_labels
+    return model, bert_tokenizer, unique_labels, tag2idx
 
 def raw_processing(doc, bert_tokenizer, word_tokenizer):
     tic = time.time()
@@ -442,15 +444,15 @@ if __name__ == "__main__":
         t_loss, v_loss = train(train_iter, eval_iter, tag2idx, param=PARAM, bert_model=PARAM.bert_model)
         show_graph(t_loss, v_loss, PARAM.apr_dir)
     elif PARAM.mode = "prediction":
-        test_iter = generate_test_data(param=PARAM, bert_tokenizer=PARAM.bert_model, do_lower_case=True)
-        model, bert_tokenizer, unique_labels = load_model(param=PARAM, do_lower_case=True)
+        model, bert_tokenizer, unique_labels, tag2idx = load_model(param=PARAM, do_lower_case=True)
+        test_iter = generate_test_data(param=PARAM, tag2idx, bert_tokenizer=PARAM.bert_model, do_lower_case=True)
         test(test_iter, model, unique_labels, PARAM.test_out):
     elif PARAM.mode = "raw_text":
         if PARAM.raw_text == None:
             print('Please provide the raw text path on PARAM.raw_text')
             import sys
             sys.exit(1)
-        model, bert_tokenizer, unique_labels = load_model(param=PARAM, do_lower_case=True)
+        model, bert_tokenizer, unique_labels, tag2idx= load_model(param=PARAM, do_lower_case=True)
         doc = open(PARAM.raw_text).read()
         pad_data = raw_processing(doc, bert_tokenizer)
         parse_raw_data(pad_data, model, unique_labels, out_file_name=PARAM.raw_prediction_output)
