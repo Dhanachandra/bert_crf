@@ -1,14 +1,15 @@
 class PARAM(object):	
-	apr_dir = 'project_dir/'
-	data_dir = 'path-to-dir/'
+	apr_dir = '../model/'
+	data_dir = '../corpus/'
 	model_name = 'model_4.pt'
 	epoch = 5
-	bert_model = 'bert-base'
+	bert_model = 'bert-base-cased'
 	lr = 5e-5
 	eps = 1e-8
+	batch_size = 8
 	mode = 'train'
-	training_data = 'train.txt'
-	val_data = 'test.txt'
-	test_data = 'test.txt'
+	training_data = 'eng.train.txt'
+	val_data = 'eng.testa.txt'
+	test_data = 'eng.testa.txt'
 	test_out = 'test_prediction.csv'
 	raw_prediction_output = 'raw_prediction.csv'
