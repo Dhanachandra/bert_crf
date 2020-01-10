@@ -30,6 +30,8 @@ from config import Config as config
 import spacy
 tokenizer = spacy.load("en_core_web_sm", disable=["tagger", "parser", "ner"])
 log_soft = F.log_softmax
+import sys
+from optparse import OptionParser
 
 #to initialize the network weight with fix seed. 
 def seed_torch(seed=12345):
@@ -408,18 +410,31 @@ def raw_processing(doc, bert_tokenizer, word_tokenizer):
     pad_data = pad(batch)
     return pad_data    
 
-if __name__ == "__main__":
+def usage(parameter):
+    parameter.print_help()
+    print("Example usage (training):\n", \
+        "\t python bert_crf.py --mode train ")
 
-    if config.mode == "train":
+    print("Example usage (testing):\n", \
+        "\t python bert_crf.py --mode test ")
+
+
+if __name__ == "__main__":
+    user_input = OptionParser()
+    user_input.add_option("--mode", dest="model_mode", metavar="string", default='traning',
+                      help="mode of the model (required)")
+    (options, args) = user_input.parse_args()
+
+    if options.model_mode == "train":
         train_iter, eval_iter, tag2idx = generate_training_data(config=config, bert_tokenizer=config.bert_model, do_lower_case=True)
         t_loss, v_loss = train(train_iter, eval_iter, tag2idx, config=config, bert_model=config.bert_model)
         show_graph(t_loss, v_loss, config.apr_dir)
-    elif config.mode == "prediction":
+    elif options.model_mode == "test":
         model, bert_tokenizer, unique_labels, tag2idx = load_model(config=config, do_lower_case=True)
         test_iter = generate_test_data(config, tag2idx, bert_tokenizer=config.bert_model, do_lower_case=True)
         print('test len: ', len(test_iter))
         test(config, test_iter, model, unique_labels, config.test_out)
-    elif config.mode == "raw_text":
+    elif options.model_mode == "raw_text":
         if config.raw_text == None:
             print('Please provide the raw text path on config.raw_text')
             import sys
@@ -428,3 +443,5 @@ if __name__ == "__main__":
         doc = open(config.raw_text).read()
         pad_data = raw_processing(doc, bert_tokenizer)
         parse_raw_data(pad_data, model, unique_labels, out_file_name=config.raw_prediction_output)
+    else:
+        usage(user_input)
