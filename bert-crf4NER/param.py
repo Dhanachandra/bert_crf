@@ -6,8 +6,8 @@ class PARAM(object):
 	bert_model = 'bert-base-cased'
 	lr = 5e-5
 	eps = 1e-8
-	batch_size = 8
-	mode = 'train'
+	batch_size = 16
+	mode = 'prediction' # for prediction mode = "prediction"
 	training_data = 'eng.train.txt'
 	val_data = 'eng.testa.txt'
 	test_data = 'eng.testa.txt'

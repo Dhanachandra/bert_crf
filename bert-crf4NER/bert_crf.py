@@ -23,7 +23,7 @@ from torchcrf import CRF
 import timeit
 import subprocess
 from tqdm import tqdm, trange
-from transformers import AdamW, WarmupLinearSchedule
+from transformers import AdamW, get_linear_schedule_with_warmup
 from matplotlib import pyplot as plt 
 import datetime
 from param import PARAM
@@ -179,7 +179,7 @@ def generate_training_data(param, bert_tokenizer="bert-base", do_lower_case=True
 
 def generate_test_data(param, tag2idx, bert_tokenizer="bert-base", do_lower_case=True):
     test_data = param.data_dir+param.test_data
-    test_sentences, test_labels, _ = corpus_reader(test_data, delim='\t')
+    test_sentences, test_labels, _ = corpus_reader(test_data, delim=' ')
     test_dataset = NER_Dataset(tag2idx, test_sentences, test_labels, tokenizer_path = bert_tokenizer, do_lower_case=do_lower_case)
     test_iter = data.DataLoader(dataset=test_dataset,
                                 batch_size=param.batch_size,
@@ -188,11 +188,11 @@ def generate_test_data(param, tag2idx, bert_tokenizer="bert-base", do_lower_case
                                 collate_fn=pad)
     return test_iter
 
-
 def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased"):
     #print('#Tags: ', len(tag2idx))
     unique_labels = list(tag2idx.keys())
     model = Bert_CRF.from_pretrained(bert_model, num_labels = len(tag2idx))
+    model.train()
     if torch.cuda.is_available():
       model.cuda()
     num_epoch = param.epoch
@@ -204,23 +204,19 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
             {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
             ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=param.lr, eps=param.eps)
-    scheduler = WarmupLinearSchedule(optimizer, warmup_steps=0, t_total=t_total)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=t_total)
     global_step = 0
     model.zero_grad()
     model.train()
     training_loss = []
     validation_loss = []
-    pearson_score = []
     train_iterator = trange(num_epoch, desc="Epoch", disable=0)
-    best_f1 = 0.0
-    tmp_loss = 0.0
-    MAX_SCORE = 0.0 
-    MAX_EPOCH = 0
     start_time = timeit.default_timer()
 
     for epoch in (train_iterator):
         epoch_iterator = tqdm(train_iter, desc="Iteration", disable=-1)
         tr_loss = 0.0
+        tmp_loss = 0.0
         model.train()
         for step, batch in enumerate(epoch_iterator):
             s = timeit.default_timer()
@@ -240,8 +236,8 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
                 model.zero_grad()
                 global_step += 1
             if step == 0:
-                print('%s Step: %d of %d Loss: %f' %(str(datetime.datetime.now()), (step+1), len(epoch_iterator), tmp_loss))
-            if (step+1) % 1000 == 0:
+                print('\n%s Step: %d of %d Loss: %f' %(str(datetime.datetime.now()), (step+1), len(epoch_iterator), loss.item()))
+            if (step+1) % 100 == 0:
                 print('%s Step: %d of %d Loss: %f' %(str(datetime.datetime.now()), (step+1), len(epoch_iterator), tmp_loss/1000))
                 tmp_loss = 0.0
       
@@ -252,7 +248,7 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
         #Y_true = []
         val_loss = 0.0
         model.eval()
-        writer = open(APR_DIR + 'prediction_'+str(epoch)+'.csv', 'w')
+        writer = open(param.apr_dir + 'prediction_'+str(epoch)+'.csv', 'w')
         for i, batch in enumerate(eval_iter):
             token_ids, attn_mask, org_tok_map, labels, original_token, sorted_idx = batch
             #attn_mask.dt
@@ -270,7 +266,7 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
             val_loss += tmp_eval_loss.item()
             #print(labels.numpy())
             y_true = list(labels.cpu().numpy())
-            for i in range(sorted_idx):
+            for i in range(len(sorted_idx)):
                 o2m = org_tok_map[i]
                 pos = sorted_idx.index(i)
                 for j, orig_tok_idx in enumerate(o2m):
@@ -285,7 +281,7 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
         validation_loss.append(val_loss/len(eval_iter))
         writer.flush()
         print('Epoch: ', epoch)
-        command = "python conlleval.py < " + APR_DIR + "prediction_"+str(epoch)+".csv"
+        command = "python conlleval.py < " + param.apr_dir + "prediction_"+str(epoch)+".csv"
         process = subprocess.Popen(command,stdout=subprocess.PIPE, shell=True)
         result = process.communicate()[0].decode("utf-8")
         print(result)
@@ -294,7 +290,7 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': tr_loss/len(train_iter),
-        }, APR_DIR + 'model_' + str(epoch) + '.pt')
+        }, param.apr_dir + 'model_' + str(epoch) + '.pt')
 
     total_time = timeit.default_timer() - start_time
     print('Total training time: ',   total_time)
@@ -303,9 +299,10 @@ def train(train_iter, eval_iter, tag2idx, param, bert_model="bert-base-uncased")
 '''
     raw_text should pad data in raw data prediction
 '''
-def test(test_iter, model, unique_labels, test_output):
-    writer = open(APR_DIR + test_output, 'w')
-    for i, batch in enumerate(eval_iter):
+def test(param, test_iter, model, unique_labels, test_output):
+    model.eval()
+    writer = open(param.apr_dir + test_output, 'w')
+    for i, batch in enumerate(test_iter):
         token_ids, attn_mask, org_tok_map, labels, original_token, sorted_idx = batch
         #attn_mask.dt
         inputs = {'input_ids': token_ids.to(device),
@@ -325,13 +322,11 @@ def test(test_iter, model, unique_labels, test_output):
                     pred_tag = 'O'
                 writer.write(pred_tag + '\n')
             writer.write('\n')
-    validation_loss.append(val_loss/len(eval_iter))
     writer.flush()
-    print('Epoch: ', epoch)
-    command = "python conlleval.py < " + APR_DIR + test_output
+    command = "python conlleval.py < " + param.apr_dir + test_output
     process = subprocess.Popen(command,stdout=subprocess.PIPE, shell=True)
     result = process.communicate()[0].decode("utf-8")
-
+    print(result)
 def parse_raw_data(padded_raw_data, model, unique_labels, out_file_name='raw_prediction.csv'):
     model.eval()
     token_ids, attn_mask, org_tok_map, labels, original_token, sorted_idx = padded_raw_data
@@ -370,15 +365,13 @@ def load_model(param, do_lower_case=True):
     f = open(param.apr_dir +'tag2idx.pkl', 'rb')
     tag2idx = pickle.load(f)
     unique_labels = list(tag2idx.keys())
-    model = Bert_CRF.from_pretrained(param.apr_dir+param.model_name, num_labels=len(tag2idx))
-    checkpoint = torch.load(ner_model_path, map_location='cpu')
+    model = Bert_CRF.from_pretrained(param.bert_model, num_labels=len(tag2idx))
+    checkpoint = torch.load(param.apr_dir + param.model_name, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     global bert_tokenizer
-    bert_tokenizer = BertTokenizer.from_pretrained(ezbert_path, do_lower_case=do_lower_case)
+    bert_tokenizer = BertTokenizer.from_pretrained(param.bert_model, do_lower_case=do_lower_case)
     if torch.cuda.is_available():
         model.cuda()
-    logger.debug('return from model function')
-    toc = time.time()
     model.eval()
     return model, bert_tokenizer, unique_labels, tag2idx
 
@@ -413,7 +406,7 @@ def raw_processing(doc, bert_tokenizer, word_tokenizer):
             sample = (token_id, len(token_id), orig_to_tok_map, dummy_labels, original_token)
             batch.append(sample)
     pad_data = pad(batch)
-    return pa_data    
+    return pad_data    
 
 if __name__ == "__main__":
 
@@ -424,7 +417,8 @@ if __name__ == "__main__":
     elif PARAM.mode == "prediction":
         model, bert_tokenizer, unique_labels, tag2idx = load_model(param=PARAM, do_lower_case=True)
         test_iter = generate_test_data(PARAM, tag2idx, bert_tokenizer=PARAM.bert_model, do_lower_case=True)
-        test(test_iter, model, unique_labels, PARAM.test_out)
+        print('test len: ', len(test_iter))
+        test(PARAM, test_iter, model, unique_labels, PARAM.test_out)
     elif PARAM.mode == "raw_text":
         if PARAM.raw_text == None:
             print('Please provide the raw text path on PARAM.raw_text')
