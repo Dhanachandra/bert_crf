@@ -1,4 +1,4 @@
-class PARAM(object):	
+class Config(object):	
 	apr_dir = '../model/'
 	data_dir = '../corpus/'
 	model_name = 'model_4.pt'
