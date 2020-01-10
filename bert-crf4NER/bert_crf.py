@@ -99,11 +99,9 @@ class NER_Dataset(data.Dataset):
         bert_tokens.append('[SEP]')
         modified_labels.append(self.tag2idx['X'])
         token_ids = self.tokenizer.convert_tokens_to_ids(bert_tokens)
-        f_name = self.fnames[idx][0]
         if len(token_ids) > 511:
             token_ids = token_ids[:512]
             modified_labels = modified_labels[:512]
-
         return token_ids, len(token_ids), orig_to_tok_map, modified_labels, self.sentences[idx]
 
 def pad(batch):
@@ -125,7 +123,7 @@ def pad(batch):
     tok_ids = LT(tok_ids)[sorted_idx]
     attn_mask = LT(attn_mask)[sorted_idx]
     labels = LT(label)[sorted_idx]
-
+    org_tok_map = get_element(2)
     sents = get_element(-1)
 
     return tok_ids, attn_mask, org_tok_map, labels, sents, list(sorted_idx.cpu().numpy())
@@ -359,8 +357,8 @@ def parse_raw_data(padded_raw_data, model, unique_labels, out_file_name='raw_pre
     print("Raw data prediction done!")
 
 def show_graph(training_loss, validation_loss, resource_dir):
-    plt.plot(range(1,17), training_loss, label='Training Loss')
-    plt.plot(range(1,17), validation_loss, label='Testing Loss')
+    plt.plot(range(1,len(training_loss)+1), training_loss, label='Training Loss')
+    plt.plot(range(1,len(training_loss)+1), validation_loss, label='Testing Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.title("Training Loss Vs Testing Loss")
