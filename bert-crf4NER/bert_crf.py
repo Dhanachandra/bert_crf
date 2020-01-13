@@ -204,11 +204,11 @@ def train(train_iter, eval_iter, tag2idx, config, bert_model="bert-base-uncased"
     optimizer_grouped_parameters = [
         {
             "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
+            "weight_decay": 0.0,
         },
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
     ]
-    optimizer = AdamW(optimizer_grouped_configeters, lr=config.lr, eps=config.eps)
+    optimizer = AdamW(optimizer_grouped_parameters, lr=config.lr, eps=config.eps)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=t_total)
     global_step = 0
     model.zero_grad()
